@@ -48,8 +48,29 @@ Across both tasks, No.VI took 7:28 and $1.90, and Ego Lite took 9:05 and $2.28.
 - **Ego Lite's strengths:** its dense page snapshots needed fewer steps on LinkedIn, and its own guide is good enough to finish an unfamiliar site without help.
 - **Ego Lite's drawbacks:**
   - It needs a visible window.
-  - It has one real profile, so accounts are not separated.
+  - It has no way to create a new empty profile, so accounts are hard to separate.
   - Each run puts a global "prefer Ego" skill link into every local agent's skill folder.
+
+### Every criterion
+
+| Criterion | No.VI browser | Ego Lite | Better |
+|---|---|---|---|
+| Accuracy | 24/24 | 24/24 | tie |
+| Time, both tasks | **7:28** | 9:05 | No.VI |
+| Cost, both tasks | **$1.90** | $2.28 | No.VI |
+| Headless | Headless by default; a window opens only for login or verification | Needs a visible window. Launched with `--headless=new`, the CLI refused with "complete the onboarding process first" (Windows, 0.6.1.13, tried twice). Users report headless use on macOS, but it is not an official mode (#445, #446) | **No.VI** |
+| Account separation | One profile per login account (18 now), with separate cookies | Profiles exist, but there is no way to create an empty one; only importing from another browser works (#536). One profile was available here | **No.VI** |
+| Sessions within one account | A tab and variables per card; the login is shared | A tab group per task space; the login is shared (per-space logins are only requested, #447) | tie |
+| Ending a session | Closes only that card's tab | Finishing the last page of a space reportedly exits the whole browser (#446) | No.VI |
+| Memory, 1 page | 694 MB | **540 MB** | Ego |
+| Memory, 3 sessions | 1,386 MB | **1,202 MB** | Ego (about 15% less) |
+| Memory, idle | **Shuts itself down after 5 idle minutes: 0 MB** | Keeps running, 430 MB in the background even after its window is closed | **No.VI** |
+| Setup | Already installed | Install, then a 10-step onboarding before the CLI works | No.VI |
+| Site notes | Saved per site and read by the next run | None | No.VI |
+| Safeguards | Records and blocks duplicate irreversible clicks | Prompt rules only | No.VI |
+| Page snapshots | Normal | Dense, so fewer steps on LinkedIn | Ego |
+
+Memory is the private memory of the browser's whole process tree ([mem_tree.py](2026-10-28-novi-vs-ego-lite/harness/mem_tree.py)), measured once with Wikipedia, BBC News and GitHub Explore open in three sessions. Each added session costs about the same on both sides (about 350 MB for No.VI, 330 MB for Ego Lite). The gap comes from No.VI's two driver processes, which use about 160 MB.
 
 ## Results: No.VI vs Aside (2026-10-27)
 
@@ -72,7 +93,10 @@ Each round fixed what the previous one exposed: snapshot format, fixed waits, st
 - **Ego Lite 비교 (2026-10-28):**
   - 정확도는 둘 다 만점이다(X 7/7, 링크드인 17/17).
   - 두 일을 합치면 No.VI는 7분 28초·$1.90, Ego Lite는 9분 05초·$2.28이 걸렸다. No.VI가 약 18% 빠르고 17% 쌌다.
-  - Ego Lite는 화면에 창이 떠야 돌고, 계정별 프로필이 없다. 실행할 때마다 다른 AI 에이전트에 "Ego를 먼저 써라" 스킬을 깐다.
+  - 창 없이 돌리기·계정 나누기·쉴 때 메모리는 No.VI가 낫다. Ego Lite는 창이 떠야 돌고, 빈 프로필을 새로 만들 수 없으며, 창을 닫아도 뒤에서 430MB를 쓴다. No.VI는 5분 쉬면 스스로 꺼진다.
+  - 돌아가는 동안 메모리는 Ego Lite가 약 15% 가볍다(세션 3개: No.VI 1,386MB, Ego Lite 1,202MB).
+  - 같은 계정 안에서 세션을 나누는 단위는 둘이 비슷하다.
+  - Ego Lite는 실행할 때마다 다른 AI 에이전트에 "Ego를 먼저 써라" 스킬을 깐다.
 - **Aside 비교 (2026-10-27, 8회차):**
   - 1회차에는 Aside가 빨랐다.
   - 회차마다 No.VI 엔진을 고쳤고, 6회차 링크드인에서는 No.VI가 34초 빠르고 비용도 조금 적었다.
