@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.novi-browser/
+profiles/
+secrets.json
+session.json
+.env
+*.log
+smoke-home/
+.install-check/
+.test-tmp/

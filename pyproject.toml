@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "novi-browser"
+version = "0.1.0"
+description = "No.VI agent browser: on-demand persistent browser profiles for any coding agent"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = ["playwright", "psutil"]
+
+[project.optional-dependencies]
+stealth = ["patchright"]
+keyring = ["keyring"]
+
+[project.scripts]
+novi-browser = "novi_browser.cli:entrypoint"
+novi-browser-mcp = "novi_browser.mcp_server:main"
+
+[tool.setuptools.packages.find]
+include = ["novi_browser*"]

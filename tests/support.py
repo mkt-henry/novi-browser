@@ -1,0 +1,21 @@
+"""Temporary homes inherit Windows ACLs, including restricted execution tokens."""
+import os
+import shutil
+import tempfile
+import uuid
+from pathlib import Path
+
+
+class TemporaryDirectory:
+    def __init__(self):
+        self.name = str(Path(tempfile.gettempdir()) / ('novi-test-' + uuid.uuid4().hex))
+        Path(self.name).mkdir(mode=0o777 if os.name == 'nt' else 0o700)
+
+    def cleanup(self):
+        shutil.rmtree(self.name)
+
+    def __enter__(self):
+        return self.name
+
+    def __exit__(self, *args):
+        self.cleanup()
