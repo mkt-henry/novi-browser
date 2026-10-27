@@ -10,6 +10,29 @@ Every run stops right before the irreversible step: nothing was posted, no ad wa
 
 The reports are written in Korean. The tables below summarize them.
 
+## All three at a glance: No.VI · Ego Lite · Aside
+
+| Criterion | No.VI browser | Ego Lite | Aside | Better |
+|---|---|---|---|---|
+| Accuracy (X 7 + LinkedIn 17) | 24/24 | 24/24 | 24/24 | tie |
+| X post, up to the Post button | **1:15 · $0.34** | 1:54 · $0.47 | 1:54 · $0.36 | No.VI |
+| LinkedIn ad draft | **6:13 · $1.56** | 7:11 · $1.81 | 6:22 · $2.00 | No.VI |
+| Both tasks | **7:28 · $1.90** | 9:05 · $2.28 | 8:16 · $2.36 | No.VI |
+| Headless | **Headless by default**; a window opens only for login or verification | Needs a visible window; refuses commands when launched headless | The agent drives the visible Aside app; the CLI has no headless option | **No.VI** |
+| Account separation | **One profile per login account (18 now)**, each started and stopped on its own | No way to create an empty profile (1 here) | 10 profile slots with separate cookies, but all run inside one browser process, so one hang means restarting every profile | **No.VI** |
+| Sessions within one account | A tab and variables per card | A tab group per space | A tab group per agent session; sessions can be resumed or steered; shares the user's own windows | tie |
+| Ending a session | Closes only that card's tab | Ending the last page of a space reportedly exits the browser | Closes only that session's tabs | No.VI · Aside |
+| Memory, 1 page | 694 MB | **540 MB** | 830 MB (browser 501 + resident agent daemon 329) | Ego |
+| Memory, 3 sessions | 1,386 MB | **1,202 MB** | 1,283 MB (browser 954 + daemon 329) | Ego (all three within 15%) |
+| Memory, idle | **Shuts down after 5 idle minutes: 0 MB** | 430 MB in the background after closing its window | Always on (it is the user's everyday browser) plus the 329 MB daemon | **No.VI** |
+| Site notes / memory | Saved per site, read by the next run | None | Largest store of site memories and site skills | Aside |
+| Duplicate irreversible clicks | Recorded and blocked | No such feature found | No such feature found | No.VI |
+| Setup | Installed | Install, then a 10-step onboarding | Installed | No.VI · Aside |
+
+- Aside's time and cost come from the 2026-10-27 rounds (LinkedIn round 6, X round 8). In those same rounds No.VI took 5:48 · $1.95 and 2:02 · $0.46.
+- Aside memory was measured on a separate, signed-out Aside instance with its own temporary profile folder and a visible window, with the same three pages, 15 seconds after loading ([mem_aside.py](2026-10-28-novi-vs-ego-lite/harness/mem_aside.py)). The everyday Aside runs every profile in one process, so it cannot be measured on its own. The daemon figure is the live `aside-daemon` process. The No.VI figures likewise include its driver processes.
+- Aside's browser engine does load pages with `--headless=new` (965 MB for three pages), but the Aside agent and CLI attach to the running app and open tabs in its profile windows, so they cannot use a headless engine.
+
 ## Tasks
 
 Both scenarios live in [`scenarios/`](scenarios/). `{M}` is replaced by the round code, for example `A7` or `XE1`.
@@ -90,6 +113,12 @@ Each round fixed what the previous one exposed: snapshot format, fixed waits, st
 
 ## 한국어 요약
 
+- **세 브라우저 종합 (No.VI · Ego Lite · Aside):**
+  - 정확도는 셋 다 만점이다.
+  - 두 일 합계: No.VI 7분 28초·$1.90, Aside 8분 16초·$2.36, Ego Lite 9분 05초·$2.28.
+  - 창 없이 돌리기·계정 나누기·쉴 때 메모리는 No.VI가 가장 낫다. Aside 에이전트는 화면에 뜬 Aside 창에서만 돌고, 모든 프로필이 한 프로그램 안에서 돈다.
+  - 세션 3개 메모리: Ego Lite 1,202MB, Aside 1,283MB, No.VI 1,386MB로 셋의 차이는 15% 안이다.
+  - 사이트 기억은 Aside가 가장 많이 쌓여 있다.
 - **Ego Lite 비교 (2026-10-28):**
   - 정확도는 둘 다 만점이다(X 7/7, 링크드인 17/17).
   - 두 일을 합치면 No.VI는 7분 28초·$1.90, Ego Lite는 9분 05초·$2.28이 걸렸다. No.VI가 약 18% 빠르고 17% 쌌다.
