@@ -19,7 +19,7 @@ The reports are written in Korean. The tables below summarize them.
 | LinkedIn ad draft | **6:13 · $1.56** | 7:11 · $1.81 | 6:22 · $2.00 | No.VI |
 | Both tasks | **7:28 · $1.90** | 9:05 · $2.28 | 8:16 · $2.36 | No.VI |
 | Headless | **Headless by default**; a window opens only for login or verification | Needs a visible window; refuses commands when launched headless | The agent drives the visible Aside app; the CLI has no headless option | **No.VI** |
-| Account separation | **One profile per login account (18 now)**, each started and stopped on its own | No way to create an empty profile (1 here) | 10 profile slots with separate cookies, but all run inside one browser process, so one hang means restarting every profile | **No.VI** |
+| Separate accounts (separate logins) | **Yes.** One profile per login account (18 now), each started and stopped on its own | Limited. Profiles exist, but an empty one cannot be created, only imported from another browser (1 here). Spaces share one login, so they do not separate accounts | **Yes.** 10 profile slots with separate logins and cookies, but all run inside one browser process, so one hang means restarting every profile | No.VI · Aside |
 | Sessions within one account | A tab and variables per card | A tab group per space | A tab group per agent session; sessions can be resumed or steered; shares the user's own windows | tie |
 | Ending a session | Closes only that card's tab | Ending the last page of a space reportedly exits the browser | Closes only that session's tabs | No.VI · Aside |
 | Memory, 1 page | 694 MB | **540 MB** | 830 MB (browser 501 + resident agent daemon 329) | Ego |
@@ -116,7 +116,8 @@ Each round fixed what the previous one exposed: snapshot format, fixed waits, st
 - **세 브라우저 종합 (No.VI · Ego Lite · Aside):**
   - 정확도는 셋 다 만점이다.
   - 두 일 합계: No.VI 7분 28초·$1.90, Aside 8분 16초·$2.36, Ego Lite 9분 05초·$2.28.
-  - 창 없이 돌리기·계정 나누기·쉴 때 메모리는 No.VI가 가장 낫다. Aside 에이전트는 화면에 뜬 Aside 창에서만 돌고, 모든 프로필이 한 프로그램 안에서 돈다.
+  - 창 없이 돌리기·쉴 때 메모리는 No.VI가 가장 낫다. Aside 에이전트는 화면에 뜬 Aside 창에서만 돈다.
+  - 같은 계정 안 세션 나누기는 셋 다 된다. 다른 계정 나누기는 No.VI·Aside가 되고(Aside는 모든 프로필이 한 프로그램 안에서 돈다), Ego Lite는 스페이스가 로그인을 같이 써서 계정 분리가 안 된다.
   - 세션 3개 메모리: Ego Lite 1,202MB, Aside 1,283MB, No.VI 1,386MB로 셋의 차이는 15% 안이다.
   - 사이트 기억은 Aside가 가장 많이 쌓여 있다.
 - **Ego Lite 비교 (2026-10-28):**
