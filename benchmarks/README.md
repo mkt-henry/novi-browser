@@ -22,8 +22,8 @@ The reports are written in Korean. The tables below summarize them.
 | Separate accounts (separate logins) | **Yes.** One profile per login account (18 now), each started and stopped on its own | Limited. Profiles exist, but an empty one cannot be created, only imported from another browser (1 here). Spaces share one login, so they do not separate accounts | **Yes.** 10 profile slots with separate logins and cookies, but all run inside one browser process, so one hang means restarting every profile | No.VI · Aside |
 | Sessions within one account | A tab and variables per card | A tab group per space | A tab group per agent session; sessions can be resumed or steered; shares the user's own windows | tie |
 | Ending a session | Closes only that card's tab | Ending the last page of a space reportedly exits the browser | Closes only that session's tabs | No.VI · Aside |
-| Memory, 1 page | 694 MB | **540 MB** | 830 MB (browser 501 + resident agent daemon 329) | Ego |
-| Memory, 3 sessions | 1,386 MB | **1,202 MB** | 1,283 MB (browser 954 + daemon 329) | Ego (all three within 15%) |
+| Memory, 1 page | **450 MB** (694 before the fix below) | 540 MB | 830 MB (browser 501 + resident agent daemon 329) | **No.VI** |
+| Memory, 3 sessions | **~1,000 MB** (950 · 1,057; 1,180-1,386 before) | 1,202 MB | 1,283 MB (browser 954 + daemon 329) | **No.VI** |
 | Memory, idle | **Shuts down after 5 idle minutes: 0 MB** | 430 MB in the background after closing its window | Always on (it is the user's everyday browser) plus the 329 MB daemon | **No.VI** |
 | Site notes / memory | Saved per site, read by the next run | None | Largest store of site memories and site skills | Aside |
 | Duplicate irreversible clicks | Recorded and blocked | No such feature found | No such feature found | No.VI |
@@ -85,15 +85,15 @@ Across both tasks, No.VI took 7:28 and $1.90, and Ego Lite took 9:05 and $2.28.
 | Account separation | One profile per login account (18 now), with separate cookies | Profiles exist, but there is no way to create an empty one; only importing from another browser works (#536). One profile was available here | **No.VI** |
 | Sessions within one account | A tab and variables per card; the login is shared | A tab group per task space; the login is shared (per-space logins are only requested, #447) | tie |
 | Ending a session | Closes only that card's tab | Finishing the last page of a space reportedly exits the whole browser (#446) | No.VI |
-| Memory, 1 page | 694 MB | **540 MB** | Ego |
-| Memory, 3 sessions | 1,386 MB | **1,202 MB** | Ego (about 15% less) |
+| Memory, 1 page | **450 MB** (694 before) | 540 MB | **No.VI** |
+| Memory, 3 sessions | **~1,000 MB** (1,386 before) | 1,202 MB | **No.VI** |
 | Memory, idle | **Shuts itself down after 5 idle minutes: 0 MB** | Keeps running, 430 MB in the background even after its window is closed | **No.VI** |
 | Setup | Already installed | Install, then a 10-step onboarding before the CLI works | No.VI |
 | Site notes | Saved per site and read by the next run | None | No.VI |
 | Safeguards | Records and blocks duplicate irreversible clicks | Prompt rules only | No.VI |
 | Page snapshots | Normal | Dense, so fewer steps on LinkedIn | Ego |
 
-Memory is the private memory of the browser's whole process tree ([mem_tree.py](2026-10-28-novi-vs-ego-lite/harness/mem_tree.py)), measured once with Wikipedia, BBC News and GitHub Explore open in three sessions. Each added session costs about the same on both sides (about 350 MB for No.VI, 330 MB for Ego Lite). The gap comes from No.VI's two driver processes, which use about 160 MB.
+Memory is the private memory of the browser's whole process tree ([mem_tree.py](2026-10-28-novi-vs-ego-lite/harness/mem_tree.py)), measured once with Wikipedia, BBC News and GitHub Explore open in three sessions. Each added session costs about the same on both sides (about 350 MB for No.VI, 330 MB for Ego Lite). The first measurement put No.VI about 15% above Ego Lite; the gap was mostly No.VI's two driver processes (about 160 MB) and its GPU process. The same day No.VI switched headless pages to software compositing (`--disable-gpu-compositing`; windows the user sees are unchanged). On a real account profile, measured twice with the same three pages, one page went from 698 to 450 MB and three sessions from 1,180 · 1,225 to 950 · 1,057 MB; the GPU and utility processes fell from about 290 MB to 80-140 MB. `--disable-gpu` cuts about as much but makes WebGL report a basic software renderer, a common bot signal, so it was not used. With software compositing WebGL still reports the real GPU, and X sign-in checks and screenshots behave as before.
 
 ## Results: No.VI vs Aside (2026-10-27)
 
@@ -116,15 +116,15 @@ Each round fixed what the previous one exposed: snapshot format, fixed waits, st
 - **세 브라우저 종합 (No.VI · Ego Lite · Aside):**
   - 정확도는 셋 다 만점이다.
   - 두 일 합계: No.VI 7분 28초·$1.90, Aside 8분 16초·$2.36, Ego Lite 9분 05초·$2.28.
-  - 창 없이 돌리기·쉴 때 메모리는 No.VI가 가장 낫다. Aside 에이전트는 화면에 뜬 Aside 창에서만 돈다.
+  - 창 없이 돌리기·메모리(돌아갈 때·쉴 때)는 No.VI가 가장 낫다. Aside 에이전트는 화면에 뜬 Aside 창에서만 돈다.
   - 같은 계정 안 세션 나누기는 셋 다 된다. 다른 계정 나누기는 No.VI·Aside가 되고(Aside는 모든 프로필이 한 프로그램 안에서 돈다), Ego Lite는 스페이스가 로그인을 같이 써서 계정 분리가 안 된다.
-  - 세션 3개 메모리: Ego Lite 1,202MB, Aside 1,283MB, No.VI 1,386MB로 셋의 차이는 15% 안이다.
+  - 세션 3개 메모리: No.VI 약 1,000MB, Ego Lite 1,202MB, Aside 1,283MB. 처음엔 No.VI가 1,386MB로 가장 무거웠지만, 창 없는 페이지의 화면 그리기를 CPU로 돌리게 고쳐 가장 가벼워졌다.
   - 사이트 기억은 Aside가 가장 많이 쌓여 있다.
 - **Ego Lite 비교 (2026-10-28):**
   - 정확도는 둘 다 만점이다(X 7/7, 링크드인 17/17).
   - 두 일을 합치면 No.VI는 7분 28초·$1.90, Ego Lite는 9분 05초·$2.28이 걸렸다. No.VI가 약 18% 빠르고 17% 쌌다.
   - 창 없이 돌리기·계정 나누기·쉴 때 메모리는 No.VI가 낫다. Ego Lite는 창이 떠야 돌고, 빈 프로필을 새로 만들 수 없으며, 창을 닫아도 뒤에서 430MB를 쓴다. No.VI는 5분 쉬면 스스로 꺼진다.
-  - 돌아가는 동안 메모리는 Ego Lite가 약 15% 가볍다(세션 3개: No.VI 1,386MB, Ego Lite 1,202MB).
+  - 돌아가는 동안 메모리는 처음엔 Ego Lite가 약 15% 가벼웠지만(No.VI 1,386MB, Ego Lite 1,202MB), No.VI를 고친 뒤 No.VI가 약 1,000MB로 더 가볍다.
   - 같은 계정 안에서 세션을 나누는 단위는 둘이 비슷하다.
   - Ego Lite는 실행할 때마다 다른 AI 에이전트에 "Ego를 먼저 써라" 스킬을 깐다.
 - **Aside 비교 (2026-10-27, 8회차):**
