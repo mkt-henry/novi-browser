@@ -216,6 +216,10 @@ Nothing is sent to an application server or telemetry service by this package. S
 
 Cookie restoration cannot revive server-expired logins. Use headed mode for human assistance. Closing a profile affects all callers sharing it; release only your session when others are active. Variables live in the worker's memory and disappear on idle close, while disk login data persists.
 
+## Benchmarks
+
+Side-by-side runs against Ego Lite and Aside on a real X post and a LinkedIn ad draft (stopped before posting or launching), with time, tokens, cost and supervisor-graded accuracy: [benchmarks/](benchmarks/).
+
 ## Tests
 
 No browser installation is needed for the unit suite:
@@ -231,3 +235,5 @@ On Windows, set `$env:PYTHONUTF8=1` in PowerShell first. GitHub Actions runs the
 No.VI 브라우저는 로그인 계정마다 전용 프로필을 만들고, 필요할 때만 브라우저를 실행합니다. 기본은 헤드리스이며 유휴 시간이 지나면 쿠키를 저장하고 종료합니다. 여러 에이전트가 같은 프로필을 쓰더라도 세션마다 탭과 변수가 나뉩니다.
 
 `novi-browser list`로 프로필을 확인하고, `add`로 사이트를 등록한 뒤 `exec` 또는 MCP로 사용하세요. `snap()`에서 읽은 참조 번호로 클릭하고, 게시·결제 등 되돌릴 수 없는 작업은 승인된 범위 안에서 `intent()`와 `done()`으로 기록하세요. 로그인이나 사람의 확인이 필요하면 `open --headed`로 창을 띄우세요. 로그인 데이터와 비밀값은 로컬 데이터 폴더에 보관되므로 접근 권한을 제한하고 공개 저장소에 올리지 마세요.
+
+Ego Lite·Aside와 같은 일(X 게시 직전·링크드인 광고 초안)을 시켜 시간·토큰·비용·정확도를 비교한 결과는 [benchmarks/](benchmarks/)에 있습니다.
