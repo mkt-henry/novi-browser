@@ -21,6 +21,38 @@ class LocalHome(unittest.TestCase):
         patch.start()
         self.addCleanup(patch.stop)
 
+    def test_a_newer_github_version_is_announced_once_a_day_and_update_installs_it(self):
+        day = 86400.0
+        with mock.patch.dict(os.environ, {nb.UPDATE_ENV: ''}), mock.patch.object(nb, '__version__', '0.1.1'), mock.patch.object(nb, 'latest_version', return_value='0.1.2') as latest:
+            first = nb.update_notice(now=day)
+            self.assertIn('0.1.2 is available', first)
+            self.assertIn('novi-browser update', first)
+            self.assertEqual(nb.update_notice(now=day + 60), '')
+            self.assertIn('0.1.2', nb.update_notice(always=True, now=day + 60))
+            self.assertEqual(latest.call_count, 1)
+            nb.update_notice(now=2 * day)
+            self.assertEqual(latest.call_count, 2)
+        with mock.patch.dict(os.environ, {nb.UPDATE_ENV: ''}), mock.patch.object(nb, '__version__', '0.1.10'), mock.patch.object(nb, 'latest_version', return_value='0.1.9'):
+            (self.home / 'update-check.json').unlink()
+            self.assertEqual(nb.update_notice(always=True, now=day), '')
+        with mock.patch.dict(os.environ, {nb.UPDATE_ENV: ''}), mock.patch.object(nb, 'latest_version', side_effect=OSError('offline')) as latest:
+            (self.home / 'update-check.json').unlink()
+            self.assertEqual(nb.update_notice(now=day), '')
+            self.assertEqual(nb.update_notice(now=day + 60), '')
+            self.assertEqual(latest.call_count, 1)
+        with mock.patch.dict(os.environ, {nb.UPDATE_ENV: '1'}), mock.patch.object(nb, 'latest_version') as latest:
+            self.assertEqual(nb.update_notice(always=True), '')
+            latest.assert_not_called()
+        out = io.StringIO()
+        with mock.patch.object(nb.subprocess, 'call', return_value=0) as call, mock.patch.object(nb, 'installed_version', return_value='0.1.2'), contextlib.redirect_stdout(out):
+            self.assertEqual(nb.main(['update']), 0)
+        self.assertIn('-> 0.1.2', out.getvalue())
+        self.assertFalse((self.home / 'update-check.json').exists())
+        command = call.call_args[0][0]
+        self.assertTrue(command[:2] == ['git', '-C'] or command[1:5] == ['-m', 'pip', 'install', '--upgrade'])
+        with mock.patch.object(nb.subprocess, 'call', return_value=1), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(nb.main(['update']), nb.EXIT_FAILED)
+
     def add(self, name='No1', site='Example'):
         return nb.add_account(name, site=site, check='https://example.com', signed_out=['/signed-out'])
 
