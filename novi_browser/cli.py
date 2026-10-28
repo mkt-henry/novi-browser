@@ -1331,6 +1331,15 @@ def memory_post(payload: dict, timeout: float=30) -> dict:
         with path.open('a', encoding='utf-8') as output:
             output.write(json.dumps(note, ensure_ascii=False) + '\n')
         return note
+    if action == 'log':
+        text = ' '.join(str(payload.get('text') or '').split())
+        if not text or not payload.get('site'):
+            raise BrowserError('A work-log line needs a site and text', EXIT_USAGE)
+        note = dict(key=_secrets.token_hex(12), title=time.strftime('%Y-%m-%d') + ' work log', body=text, line=text, host='', site=payload.get('site', ''), source='local', kind='episodic', at=time.time(), session=payload.get('card', ''), profile=payload.get('account', ''))
+        HOME.mkdir(parents=True, exist_ok=True, mode=0o777 if WINDOWS else 0o700)
+        with path.open('a', encoding='utf-8') as output:
+            output.write(json.dumps(note, ensure_ascii=False) + '\n')
+        return note
     if action == 'read':
         for note in notes:
             if note['key'] == payload.get('key'):
@@ -1343,7 +1352,7 @@ def memory_post(payload: dict, timeout: float=30) -> dict:
     if action == 'site':
         hosts = {host(h) for h in payload.get('hosts', [])}
         names = {n.casefold() for n in payload.get('names', [])}
-        found = [n for n in reversed(notes) if n['host'] in hosts or n['site'].casefold() in names]
+        found = [n for n in reversed(notes) if n.get('kind', 'site') == 'site' and (n['host'] in hosts or n['site'].casefold() in names)]
         return dict(notes=found[:payload.get('limit', 8)])
     raise BrowserError('Unknown memory action', EXIT_USAGE)
 
@@ -1478,6 +1487,26 @@ def agent_command(account: str, site: str, task: str, *, resume: str='', model: 
     env[CARD_ENV] = session_id()
     return (argv, env)
 
+LOG_TASK_CHARS, LOG_RESULT_CHARS = 200, 600
+
+def squash(text, limit: int) -> str:
+    flat = ' '.join(str(text or '').split())
+    return flat if len(flat) <= limit else flat[:limit - 1] + '…'
+
+def agent_log_line(task: str, answer: dict, resumed: bool) -> str:
+    """One work-log line cut from the task and the agent's own last answer (no second model call)."""
+    head = ('(resumed) ' if resumed else '') + squash(task, LOG_TASK_CHARS)
+    state = '[stopped/error] ' if answer.get('is_error') else ''
+    return f"{head} -> {state}{squash(answer.get('result'), LOG_RESULT_CHARS) or '(no answer)'}"
+
+def log_agent_run(args, site: str, task: str, answer: dict) -> None:
+    """Every agent run appends one work-log line (kind episodic): never printed at a site's first open, found with
+    `memory --search`. Best effort: the run already happened."""
+    try:
+        memory_post({'action': 'log', 'site': site, 'account': args.account, 'card': os.environ.get(CARD_ENV, ''), 'text': agent_log_line(task, answer, bool(args.resume))})
+    except Exception as exc:
+        print(f'(Could not write the work log: {exc})', file=sys.stderr)
+
 def run_agent(args) -> int:
     if os.environ.get(AGENT_ENV):
         raise BrowserError('An agent cannot start another agent. Use exec.', EXIT_USAGE)
@@ -1505,6 +1534,7 @@ def run_agent(args) -> int:
     if not answer:
         raise BrowserError(f'Agent returned no answer (exit {done.returncode}).\n{(done.stderr or done.stdout)[-1500:]}')
     print((answer.get('result') or '').strip())
+    log_agent_run(args, site, task, answer)
     cost, session = (answer.get('total_cost_usd'), answer.get('session_id') or session)
     print(f"\n[Agent session {session} · {answer.get('num_turns', '?')} turns{(f' · ${cost:.2f}' if isinstance(cost, (int, float)) else '')} · {seconds:.0f} seconds] Resume: {again(session)}")
     return EXIT_FAILED if answer.get('is_error') else 0
@@ -1644,7 +1674,7 @@ def main(argv=None) -> int:
     mem.add_argument('--site', default='')
     mem.add_argument('--url', default='', help='URL of a site without a registered profile')
     mem.add_argument('--search', default='', help='Search local site notes')
-    mem.add_argument('--kind', action='append', default=[], help='Filter search by note kind (site)')
+    mem.add_argument('--kind', action='append', default=[], help='Filter search by note kind (site, episodic)')
     mem.add_argument('--read', default='', help='Read a full note by key')
     rem = sub.add_parser('remember')
     rem.add_argument('account', nargs='?', type=profile_name)
