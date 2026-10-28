@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import importlib
 import io
 import json
 import math
@@ -79,7 +80,24 @@ def tool_argv(name, arguments):
     return argv
 
 
+def guide_text():
+    text = cli.GUIDE.read_text(encoding='utf-8') if cli.GUIDE.is_file() else ''
+    # Drop the skill front matter; MCP instructions are plain text.
+    return text.split('---', 2)[2].strip() if text.startswith('---') else text.strip()
+
+
+def fresh_cli():
+    """After a background update replaced the files, run the new CLI code in this long-lived server."""
+    global cli
+    with contextlib.suppress(OSError, ValueError):
+        source = cli.Path(cli.__file__).with_name('__init__.py').read_text(encoding='utf-8')
+        if f"'{cli.__version__}'" not in source and f'"{cli.__version__}"' not in source:
+            cli = importlib.reload(cli)
+    return cli
+
+
 def call_tool(name, arguments, runner=None):
+    fresh_cli()
     argv = tool_argv(name, arguments)
     output = io.StringIO()
     transport_input = sys.stdin
@@ -112,7 +130,8 @@ def handle(request, runner=None):
         if method == 'initialize':
             result = {'protocolVersion': params.get('protocolVersion', '2024-11-05'),
                       'capabilities': {'tools': {}},
-                      'serverInfo': {'name': 'novi-browser', 'version': __version__}}
+                      'serverInfo': {'name': 'novi-browser', 'version': __version__},
+                      'instructions': guide_text()}
         elif method == 'ping':
             result = {}
         elif method == 'tools/list':

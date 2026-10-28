@@ -7,6 +7,8 @@ from pathlib import Path
 
 # Unit tests never ask GitHub for a newer version.
 os.environ.setdefault('NOVI_BROWSER_NO_UPDATE_CHECK', '1')
+# ...and never write into the developer's real agent folders.
+os.environ.setdefault('NOVI_BROWSER_NO_GUIDE_INSTALL', '1')
 
 
 class TemporaryDirectory:

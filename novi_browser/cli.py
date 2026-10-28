@@ -1199,12 +1199,16 @@ def call_fresh(account: str, card: str, lock: dict, path: str, payload: dict, ti
     return call(lock, path, payload, timeout)
 
 def spawn(account: str, card: str, headed: bool, nonce: str, site: str='') -> None:
-    script = str(Path(__file__).resolve())
     args = ['_serve', account, '--nonce', nonce] + (['--card', card] if card else []) + (['--site', site] if site else []) + (['--headed'] if headed else [])
+    launch_detached(args, folder(account), nonce, 'worker.log')
+
+def launch_detached(args: list, private: Path, nonce: str, log_name: str) -> None:
+    """Run this file with args in a process that outlives the caller and its job object."""
+    script = str(Path(__file__).resolve())
     if WINDOWS:
         # WMI detaches from the caller's job, but does not inherit its environment.
         # Transfer it through a private, short-lived file rather than exposing secrets in argv.
-        environment = folder(account) / f'environment-{nonce}.json'
+        environment = private / f'environment-{nonce}.json'
         write_json(environment, dict(os.environ, NOVI_BROWSER_HOME=str(HOME.resolve())))
         exe = Path(sys.executable)
         quiet = exe.with_name('pythonw.exe')
@@ -1222,7 +1226,7 @@ def spawn(account: str, card: str, headed: bool, nonce: str, site: str='') -> No
             pass
         environment.unlink(missing_ok=True)
         # Restricted Windows installations may deny WMI. Native detachment still works outside caller job cleanup.
-        with (HOME / 'worker.log').open('a', encoding='utf-8') as log:
+        with (HOME / log_name).open('a', encoding='utf-8') as log:
             child = [str(quiet if quiet.exists() else exe), '-X', 'utf8', script, *args]
             options = dict(stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                            env=dict(os.environ, NOVI_BROWSER_HOME=str(HOME.resolve())), close_fds=True)
@@ -1231,7 +1235,8 @@ def spawn(account: str, card: str, headed: bool, nonce: str, site: str='') -> No
             except OSError:
                 subprocess.Popen(child, creationflags=0x00000008 | 0x00000200, **options)
     else:
-        log = (HOME / 'worker.log').open('a')
+        HOME.mkdir(parents=True, exist_ok=True, mode=0o700)
+        log = (HOME / log_name).open('a')
         subprocess.Popen([sys.executable, script, *args], stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
 
 def close_worker(account: str, reason: str='closed', wait: float=30, pid=None) -> bool:
@@ -1614,9 +1619,16 @@ def serve_remote() -> int:
     return code
 
 REPO_URL = 'https://github.com/mkt-henry/novi-browser'
-VERSION_URL = 'https://raw.githubusercontent.com/mkt-henry/novi-browser/main/novi_browser/__init__.py'
+# Forks point both at their own copy: a URL of __init__.py and a pip requirement.
+VERSION_URL = os.environ.get('NOVI_BROWSER_VERSION_URL') or 'https://raw.githubusercontent.com/mkt-henry/novi-browser/main/novi_browser/__init__.py'
+UPDATE_SOURCE = os.environ.get('NOVI_BROWSER_UPDATE_SOURCE') or f'git+{REPO_URL}'
 UPDATE_ENV = 'NOVI_BROWSER_NO_UPDATE_CHECK'
+AUTO_UPDATE_ENV = 'NOVI_BROWSER_AUTO_UPDATE'
+GUIDE_ENV = 'NOVI_BROWSER_NO_GUIDE_INSTALL'
 UPDATE_CHECK_HOURS = 24
+UPDATE_WAIT_SECONDS = 2 * 3600
+UPDATE_LOCK_STALE = 30 * 60
+GUIDE = Path(__file__).with_name('SKILL.md')
 # Read beside this file: workers and agents run cli.py by path, where package imports fail.
 __version__ = (re.findall(r"__version__\s*=\s*['\"]([^'\"]+)", Path(__file__).with_name('__init__.py').read_text(encoding='utf-8')) or ['0'])[0]
 
@@ -1628,13 +1640,62 @@ def latest_version(timeout: float=3.0) -> str:
         found = re.search(r"__version__\s*=\s*['\"]([^'\"]+)", response.read(4096).decode('utf-8', 'replace'))
     return found.group(1) if found else ''
 
+def guide_targets() -> list[Path]:
+    """Skill folders of agents installed for this user; an agent that is absent gets nothing."""
+    user = Path.home()
+    return [user / agent / 'skills' / 'novi-browser' / 'SKILL.md' for agent in ('.claude', '.codex') if (user / agent).is_dir()]
+
+def install_guides() -> list[Path]:
+    """Copy the packaged agent guide into each agent's skills; rewrite only when it changed."""
+    if os.environ.get(GUIDE_ENV) or not GUIDE.is_file():
+        return []
+    text, written = GUIDE.read_text(encoding='utf-8'), []
+    for target in guide_targets():
+        try:
+            if target.is_file() and target.read_text(encoding='utf-8') == text:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding='utf-8')
+            written.append(target)
+        except OSError:
+            continue
+    return written
+
+def git_clone() -> bool:
+    return (Path(__file__).resolve().parent.parent / '.git').exists()
+
+def auto_update_on() -> bool:
+    # Clones belong to developers: they pull themselves.
+    return os.environ.get(AUTO_UPDATE_ENV, '1').strip().lower() not in ('0', 'false', 'no', 'off') and not git_clone()
+
+def update_busy() -> bool:
+    lock = HOME / 'update.lock'
+    try:
+        return time.time() - lock.stat().st_mtime < UPDATE_LOCK_STALE
+    except OSError:
+        return False
+
+def start_background_update(latest: str) -> bool:
+    if update_busy():
+        return False
+    try:
+        launch_detached(['_autoupdate', latest], HOME, f'update-{_secrets.token_hex(6)}', 'update.log')
+        return True
+    except OSError:
+        return False
+
 def update_notice(always: bool=False, now: float | None=None) -> str:
-    """One line when GitHub has a newer version; asks GitHub at most once a day."""
+    """Asks GitHub at most once a day; a newer version installs itself in the background."""
     if os.environ.get(UPDATE_ENV):
         return ''
     now = time.time() if now is None else now
     path = HOME / 'update-check.json'
     seen = read_json(path, {}) or {}
+    done = seen.pop('updated', None)
+    if done:
+        with contextlib.suppress(OSError):
+            write_json(path, seen)
+        return f"novi-browser updated itself {done.get('from')} -> {done.get('to')}; agent guides refreshed. Profiles, logins and notes are kept."
     checked = now - float(seen.get('at') or 0) >= UPDATE_CHECK_HOURS * 3600
     if checked:
         try:
@@ -1645,28 +1706,109 @@ def update_notice(always: bool=False, now: float | None=None) -> str:
         with contextlib.suppress(OSError):
             write_json(path, seen)
     latest = seen.get('latest') or ''
-    if (always or checked) and latest and version_tuple(latest) > version_tuple(__version__):
+    if not latest or version_tuple(latest) <= version_tuple(__version__):
+        return ''
+    if auto_update_on():
+        if checked and start_background_update(latest):
+            return f'novi-browser {latest} found (installed {__version__}); it installs itself in the background once no browser is running.'
+        return ''
+    if always or checked:
         return f'novi-browser {latest} is available (installed {__version__}). Run `novi-browser update`; profiles, logins and notes are kept.'
     return ''
+
+def wait_for_update(limit: float=180) -> None:
+    """Commands pause while files are being replaced, so no half-installed code runs."""
+    deadline = time.time() + limit
+    while update_busy() and time.time() < deadline:
+        try:
+            if not (HOME / 'update.lock').read_text(encoding='utf-8', errors='replace').startswith('installing'):
+                return
+        except OSError:
+            return
+        time.sleep(2)
 
 def installed_version() -> str:
     # -I keeps a clone in the current folder from shadowing the installed package.
     done = subprocess.run([sys.executable, '-I', '-c', 'import novi_browser; print(novi_browser.__version__)'], capture_output=True, text=True, timeout=60)
     return done.stdout.strip() or '?'
 
+def upgrade_command() -> list[str]:
+    if git_clone():
+        return ['git', '-C', str(Path(__file__).resolve().parent.parent), 'pull', '--ff-only']
+    return [sys.executable, '-m', 'pip', 'install', '--upgrade', '--disable-pip-version-check', UPDATE_SOURCE]
+
+def refresh_guides_from_new_code() -> None:
+    # The running interpreter still holds the old guide text; ask the newly installed code.
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        subprocess.run([sys.executable, '-I', '-c', 'from novi_browser import cli; cli.install_guides()'], capture_output=True, timeout=60)
+
+def take_update_lock() -> bool:
+    lock = HOME / 'update.lock'
+    HOME.mkdir(parents=True, exist_ok=True, mode=0o777 if WINDOWS else 0o700)
+    for _ in range(2):
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+            return True
+        except FileExistsError:
+            if update_busy():
+                return False
+            with contextlib.suppress(OSError):
+                lock.unlink()
+    return False
+
+def auto_update(latest: str) -> int:
+    """Detached updater: waits until no browser runs, then replaces the package."""
+    if not take_update_lock():
+        return 0
+    lock = HOME / 'update.lock'
+    try:
+        deadline = time.time() + UPDATE_WAIT_SECONDS
+        while running() and time.time() < deadline:
+            # Keep the lock fresh while waiting for workers to close after their idle time.
+            lock.write_text(f'waiting {os.getpid()}', encoding='utf-8')
+            time.sleep(20)
+        if running():
+            print(f'{time.strftime("%Y-%m-%d %H:%M")} browsers stayed busy; update to {latest} retries tomorrow.', flush=True)
+            return 0
+        lock.write_text(f'installing {os.getpid()}', encoding='utf-8')
+        before = __version__
+        code = subprocess.call(upgrade_command(), stdout=sys.stdout, stderr=sys.stderr)
+        after = installed_version()
+        if code == 0:
+            refresh_guides_from_new_code()
+            path = HOME / 'update-check.json'
+            write_json(path, dict(read_json(path, {}) or {}, updated={'from': before, 'to': after, 'at': time.time()}))
+        print(f'{time.strftime("%Y-%m-%d %H:%M")} update to {latest}: exit {code}, installed {after}', flush=True)
+        return code
+    finally:
+        with contextlib.suppress(OSError):
+            lock.unlink()
+
 def self_update() -> int:
-    root = Path(__file__).resolve().parent.parent
-    if (root / '.git').exists():
-        command = ['git', '-C', str(root), 'pull', '--ff-only']
-    else:
-        command = [sys.executable, '-m', 'pip', 'install', '--upgrade', f'git+{REPO_URL}']
+    command = upgrade_command()
     print('Running: ' + ' '.join(command), flush=True)
     code = subprocess.call(command)
     if code:
         raise BrowserError(f'Update failed (exit {code}). Profiles, logins and notes were not touched.', EXIT_FAILED)
     with contextlib.suppress(OSError):
         (HOME / 'update-check.json').unlink()
-    print(f'novi-browser {__version__} -> {installed_version()}. Profiles, logins and notes are kept. Running browsers switch after they close (five idle minutes) or now with `novi-browser close --all`.')
+    refresh_guides_from_new_code()
+    print(f'novi-browser {__version__} -> {installed_version()}. Profiles, logins and notes are kept; agent guides refreshed. Running browsers switch after they close (five idle minutes) or now with `novi-browser close --all`.')
+    return 0
+
+def setup(browser: bool=True) -> int:
+    """One step after pip install: the agent guide for each agent, then Chromium."""
+    written = install_guides()
+    for target in guide_targets():
+        print(f"Agent guide: {target}{' (written)' if target in written else ' (up to date)'}")
+    if not guide_targets():
+        print('No Claude Code or Codex folder found; MCP clients receive the guide from novi-browser-mcp. See AGENTS.md for other agents.')
+    if browser:
+        print('Installing Chromium for Playwright…', flush=True)
+        code = subprocess.call([sys.executable, '-m', 'playwright', 'install', 'chromium'])
+        if code:
+            raise BrowserError(f'Chromium install failed (exit {code}). Run `python -m playwright install chromium`.', EXIT_UNAVAILABLE)
+    print('Ready. Updates install automatically once a day; set NOVI_BROWSER_AUTO_UPDATE=0 to only be told.')
     return 0
 
 def main(argv=None) -> int:
@@ -1675,7 +1817,11 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog='novi-browser', description='No.VI agent browser: one persistent profile per identity')
     sub = parser.add_subparsers(dest='cmd', required=True)
     sub.add_parser('list')
-    sub.add_parser('update', help='Install the latest version from GitHub')
+    sub.add_parser('update', help='Install the latest version from GitHub now')
+    sp = sub.add_parser('setup', help='Install the agent guides and Chromium')
+    sp.add_argument('--no-browser', action='store_true', help='Skip the Chromium download')
+    auto = sub.add_parser('_autoupdate')
+    auto.add_argument('latest')
     add = sub.add_parser('add')
     add.add_argument('account', type=profile_name)
     add.add_argument('--site', required=True)
@@ -1755,7 +1901,9 @@ def main(argv=None) -> int:
     if hasattr(sys.stdout, 'reconfigure'):
         with contextlib.suppress(Exception):
             sys.stdout.reconfigure(encoding='utf-8')
-    if args.cmd not in ('_serve', 'update'):
+    if args.cmd not in ('_serve', '_autoupdate', 'update', 'setup'):
+        wait_for_update()
+        install_guides()
         notice = update_notice(always=args.cmd == 'list')
         if notice:
             print(notice, file=sys.stderr)
@@ -1776,6 +1924,13 @@ def run(args) -> int:
         return run_agent(args)
     if args.cmd == 'update':
         return self_update()
+    if args.cmd == 'setup':
+        return setup(browser=not args.no_browser)
+    if args.cmd == '_autoupdate':
+        if sys.stdout is None or sys.stderr is None or WINDOWS:
+            log = (HOME / 'update.log').open('a', encoding='utf-8')
+            sys.stdout = sys.stderr = log
+        return auto_update(args.latest)
     if args.cmd == 'list':
         live = running()
         for account in accounts():

@@ -15,6 +15,8 @@ class MCP(unittest.TestCase):
         response = self.request('initialize', {'protocolVersion': '2025-06-18'})
         self.assertEqual(response['id'], 7)
         self.assertEqual(response['result']['protocolVersion'], '2025-06-18')
+        # MCP clients get the operating guide without copying any file.
+        self.assertTrue(response['result']['instructions'].startswith('# No.VI browser operating guide'))
         names = [t['name'] for t in self.request('tools/list')['result']['tools']]
         self.assertEqual(names, ['list_profiles', 'add_site', 'open', 'exec', 'snap', 'close', 'remember', 'memory'])
         self.assertIsNone(mcp.handle({'jsonrpc': '2.0', 'method': 'notifications/initialized'}))
