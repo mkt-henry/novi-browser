@@ -12,17 +12,16 @@ Python 3.10 or newer:
 
 ```sh
 pip install git+https://github.com/mkt-henry/novi-browser
-playwright install chromium
-novi-browser list
+novi-browser setup
 ```
 
-### Update
+`setup` downloads Chromium and installs the agent operating guide into every agent found on the machine: `~/.claude/skills/novi-browser/SKILL.md` for Claude Code and `~/.codex/skills/novi-browser/SKILL.md` for Codex. Any later command re-installs the guide if an agent folder appears or the guide changed, and the MCP server hands the same guide to its client on `initialize`. Nothing needs to be copied by hand.
 
-```sh
-novi-browser update
-```
+### Updates
 
-Once a day the CLI asks GitHub for the latest version and prints one line when a newer one exists; `list` repeats it until you update. Profiles, logins and notes in `~/.novi-browser/` are kept. A clone installed with `pip install -e .` updates with `git pull`. Versions before 0.1.2 have no `update` command: run `pip install --upgrade git+https://github.com/mkt-henry/novi-browser` once. Set `NOVI_BROWSER_NO_UPDATE_CHECK=1` to turn the check off.
+Updates are automatic. Once a day the first command asks GitHub for the latest version; when a newer one exists it starts a detached updater and keeps working on the installed version. The updater waits until no browser is running (browsers close after their idle time), installs the new version, refreshes the agent guides, and the next command prints one line such as `novi-browser updated itself 0.1.3 -> 0.1.4`. Commands that start during the install wait for it to finish, and a running MCP server loads the new code on its next tool call. Profiles, logins and notes in `~/.novi-browser/` are kept; the updater log is `~/.novi-browser/update.log`.
+
+`novi-browser update` installs the latest version immediately. Set `NOVI_BROWSER_AUTO_UPDATE=0` to be told about new versions instead of getting them installed, or `NOVI_BROWSER_NO_UPDATE_CHECK=1` to turn the check off. A clone installed with `pip install -e .` is never replaced automatically: it is told about new versions and `update` runs `git pull`. Installations before 0.1.3 do not update themselves yet: run `pip install --upgrade git+https://github.com/mkt-henry/novi-browser` (or `novi-browser update` on 0.1.2) once.
 
 For development, clone this repository and run `pip install -e .`. On Linux, `playwright install --with-deps chromium` can also install required system libraries (administrator privileges may be needed).
 
@@ -63,7 +62,8 @@ novi-browser exec No2 --site Work -c "snap(interactive=True)"
 | Command | Purpose |
 | --- | --- |
 | `list` | Profiles, identities, sites, last login checks, active sessions and available RAM |
-| `update` | Install the latest version from GitHub (`git pull` in a clone) |
+| `setup [--no-browser]` | Install agent guides and download Chromium |
+| `update` | Install the latest version from GitHub now (`git pull` in a clone) |
 | `add No1 --site X --check URL --signed-out MARKER` | Add or update a site; `--signed-out` is repeatable |
 | `open No1 --site X [--headed] [--note TEXT]` | Start on demand and check login; optionally show a window |
 | `check No1 --site X` | Recheck login; may attempt a saved login once |
@@ -151,7 +151,7 @@ Choose a different session value for independent callers. MCP sends newline-deli
 
 ## Agent guides and delegation
 
-Copy `skills/novi-browser/` into `~/.claude/skills/novi-browser/` for Claude Code. [AGENTS.md](AGENTS.md) provides the same operating guide for Codex and other coding agents; copy or reference it in the agent's project instructions.
+The operating guide installs itself (see [Install](#install)): Claude Code and Codex read it as the `novi-browser` skill, and MCP clients receive it as server instructions. [AGENTS.md](AGENTS.md) holds the same guide for other coding agents that read project instruction files; set `NOVI_BROWSER_NO_GUIDE_INSTALL=1` to stop writing into agent folders.
 
 `agent` requires an installed and authenticated Claude Code CLI. Its default model is the `sonnet` alias; override with `--model MODEL` or `NOVI_BROWSER_AGENT_MODEL`. It runs a lean `claude -p` with only the Bash tool, no inherited MCP configuration or slash commands, and a shared browser session. It uses `--dangerously-skip-permissions`, so invoke delegation only for trusted tasks in a suitable working directory. It reports a session ID for `--resume`. The child instructions require stopping before unapproved irreversible actions and human verification. Other agents can use `exec` or MCP directly without Claude Code.
 
@@ -198,6 +198,9 @@ The local file is set to mode 600 where supported. On Windows, restrict access t
 | `NOVI_BROWSER_REMOTE` | Optional SSH target `user@host`; unset means run locally on every OS |
 | `NOVI_BROWSER_SHARE_CMD` | Optional executable and argument template for sharing a headed window |
 | `NOVI_BROWSER_NO_UPDATE_CHECK` | `1` stops the daily GitHub version check |
+| `NOVI_BROWSER_AUTO_UPDATE` | `0` only announces new versions instead of installing them in the background |
+| `NOVI_BROWSER_NO_GUIDE_INSTALL` | `1` stops installing the guide into `~/.claude` and `~/.codex` |
+| `NOVI_BROWSER_VERSION_URL`, `NOVI_BROWSER_UPDATE_SOURCE` | For forks: URL of the `__init__.py` to compare and the pip requirement to install |
 
 Set a stable explicit session ID when a launcher creates a new parent process for each call. `--session ID` overrides it for open/exec/check/login/close/remember. `--card` remains a command-line compatibility alias.
 
@@ -244,7 +247,9 @@ On Windows, set `$env:PYTHONUTF8=1` in PowerShell first. GitHub Actions runs the
 
 No.VI 브라우저는 로그인 계정마다 전용 프로필을 만들고, 필요할 때만 브라우저를 실행합니다. 기본은 헤드리스이며 유휴 시간이 지나면 쿠키를 저장하고 종료합니다. 여러 에이전트가 같은 프로필을 쓰더라도 세션마다 탭과 변수가 나뉩니다.
 
-새 판이 나오면 명령 실행 중 한 줄로 알려 줍니다. `novi-browser update` 한 번이면 로그인·프로필·요령을 그대로 둔 채 새 판으로 바뀝니다(0.1.1 이하는 처음 한 번만 `pip install --upgrade git+https://github.com/mkt-henry/novi-browser`).
+설치는 `pip install git+https://github.com/mkt-henry/novi-browser` 다음 `novi-browser setup` 한 번입니다. 이때 이 컴퓨터의 Claude Code·Codex에 운영 안내 글이 저절로 들어가고, MCP로 연결한 에이전트도 연결할 때 같은 안내를 받습니다. 손으로 복사할 것은 없습니다.
+
+새 판은 저절로 깔립니다. 하루 한 번 새 판을 확인하고, 돌고 있는 브라우저가 모두 쉬면 뒤에서 새 판으로 바꾼 뒤 에이전트 안내 글도 새 판으로 바꿉니다. 로그인·프로필·요령은 그대로입니다. 저절로 깔리는 것을 끄려면 `NOVI_BROWSER_AUTO_UPDATE=0`을 두세요. 0.1.2 이하로 설치한 곳은 처음 한 번만 `pip install --upgrade git+https://github.com/mkt-henry/novi-browser`를 실행하면 그다음부터 저절로 바뀝니다.
 
 `novi-browser list`로 프로필을 확인하고, `add`로 사이트를 등록한 뒤 `exec` 또는 MCP로 사용하세요. `snap()`에서 읽은 참조 번호로 클릭하고, 게시·결제 등 되돌릴 수 없는 작업은 승인된 범위 안에서 `intent()`와 `done()`으로 기록하세요. 로그인이나 사람의 확인이 필요하면 `open --headed`로 창을 띄우세요. 로그인 데이터와 비밀값은 로컬 데이터 폴더에 보관되므로 접근 권한을 제한하고 공개 저장소에 올리지 마세요.
 
