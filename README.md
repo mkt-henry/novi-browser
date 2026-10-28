@@ -16,6 +16,14 @@ playwright install chromium
 novi-browser list
 ```
 
+### Update
+
+```sh
+pip install --upgrade git+https://github.com/mkt-henry/novi-browser
+```
+
+Profiles, logins and notes in `~/.novi-browser/` are kept. A clone installed with `pip install -e .` updates with `git pull`.
+
 For development, clone this repository and run `pip install -e .`. On Linux, `playwright install --with-deps chromium` can also install required system libraries (administrator privileges may be needed).
 
 Optional integrations:
@@ -67,7 +75,7 @@ novi-browser exec No2 --site Work -c "snap(interactive=True)"
 | `resolve No1 --key KEY --state done\|failed [--url URL]` | Resolve a previously inspected uncertain outcome |
 | `remember No1 --site X "note"` | Append site know-how locally |
 | `memory No1 --site X` | Read local site notes |
-| `memory --search QUERY` / `memory --read KEY` | Search notes or read a complete note |
+| `memory --search QUERY` / `memory --read KEY` | Search notes and work logs, or read a complete note |
 | `stats [--days 7]` | Summarize local worker runs and memory use |
 
 `add` also accepts `--signed-in-text`, `--identity`, `--label`, `--home`, `--note`, `--secret`, `--window`, and a saved login method: `--login-url`, `--user-field`, `--password-field`, `--submit`. Both login URL and password field are required for a saved method. A refused or interrupted automatic login is not retried automatically until a successful login check clears it. A later explicit `login` can retry after a cooldown; inspect the page and correct credentials first.
@@ -159,7 +167,7 @@ Default data home: `~/.novi-browser/`. Set `NOVI_BROWSER_HOME` before launching 
     state.json         # Last authentication checks
     ledger.jsonl       # Action intent/outcome history
     lock.json          # Live worker port, PID and per-start token
-  memory.jsonl         # Append-only site notes shared by hostname/site name
+  memory.jsonl         # Append-only site notes and one work-log line per `agent` run
   memory-shown.json    # Which sessions have read each site's notes
   runs.jsonl           # Local run statistics
   worker.log          # Worker diagnostics

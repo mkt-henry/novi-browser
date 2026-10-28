@@ -58,6 +58,23 @@ class LocalHome(unittest.TestCase):
         with self.assertRaises(nb.BrowserError):
             nb.memory_post({'action': 'read', 'key': 'missing'})
 
+    def test_each_agent_run_adds_a_work_log_line_that_is_searched_not_shown(self):
+        answer = json.dumps({'result': 'Compose window open', 'session_id': 's-1'})
+        done = mock.Mock(stdout=answer + '\n', stderr='', returncode=0)
+        with (
+            mock.patch.object(nb, 'load_account', return_value={'sites': {'Example': {}}}),
+            mock.patch.object(nb, 'site_config', return_value=('Example', {})),
+            mock.patch.object(nb, 'find_claude', return_value='claude'),
+            mock.patch.object(nb.subprocess, 'run', return_value=done),
+            mock.patch.dict(os.environ, {nb.AGENT_ENV: ''}), contextlib.redirect_stdout(io.StringIO())
+        ):
+            self.assertEqual(nb.main(['agent', 'No1', '--site', 'Example', 'Open compose']), 0)
+        found = nb.memory_post({'action': 'search', 'query': 'compose window', 'kinds': ['episodic']})
+        self.assertEqual(found['results'][0]['body'], 'Open compose -> Compose window open')
+        self.assertEqual(nb.memory_post({'action': 'site', 'hosts': [], 'names': ['Example']})['notes'], [])
+        line = nb.agent_log_line('x' * 500, {'result': 'y', 'is_error': True}, resumed=True)
+        self.assertTrue(line.startswith('(resumed) ' + 'x' * (nb.LOG_TASK_CHARS - 1) + '… -> [stopped/error] y'))
+
     def test_first_open_in_each_session_prints_notes_once(self):
         config = self.add()
         nb.memory_post({'action': 'note', 'host': 'https://example.com', 'site': 'Example', 'text': 'Read this note'})
