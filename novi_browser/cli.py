@@ -102,6 +102,10 @@ def launch_options(headed: bool, start_url: str='', engine: str='chromium', chro
         options['chromium_sandbox'] = True
     if not headed:
         options['viewport'] = {'width': 1440, 'height': 900}
+        # Nobody looks at a headless page, so it is composited in software: the GPU and utility processes fall from
+        # ~290 MB to ~80-140 MB (15-25% of the browser) while WebGL still reports the real GPU; --disable-gpu would
+        # report a basic software renderer, a common bot signal. See benchmarks/README.md.
+        options['args'] = [*options['args'], '--disable-gpu-compositing']
         if engine == 'chrome' and chrome_major:
             platform = ('Windows NT 10.0; Win64; x64' if WINDOWS else
                         'Macintosh; Intel Mac OS X 10_15_7' if sys.platform == 'darwin' else 'X11; Linux x86_64')

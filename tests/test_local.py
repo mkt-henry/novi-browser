@@ -173,6 +173,12 @@ class LocalHome(unittest.TestCase):
         self.assertTrue(headless['chromium_sandbox'])
         self.assertNotIn('Headless', headless['user_agent'])
 
+    def test_headless_pages_composite_in_software_and_keep_their_gpu(self):
+        for engine in ('chrome', 'chromium'):
+            self.assertIn('--disable-gpu-compositing', nb.launch_options(False, '', engine, '150')['args'])
+            self.assertNotIn('--disable-gpu', nb.launch_options(False, '', engine, '150')['args'])
+            self.assertNotIn('--disable-gpu-compositing', nb.launch_options(True, 'https://example.com', engine)['args'])
+
     def test_refused_or_interrupted_automatic_login_is_not_repeated(self):
         self.add()
         nb.add_account('No1', site='Example', check='https://example.com', signed_out=['/login'],
