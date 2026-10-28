@@ -1613,12 +1613,69 @@ def serve_remote() -> int:
         sys.stdout.write('\n' + REMOTE_FILES + json.dumps(back) + '\n')
     return code
 
+REPO_URL = 'https://github.com/mkt-henry/novi-browser'
+VERSION_URL = 'https://raw.githubusercontent.com/mkt-henry/novi-browser/main/novi_browser/__init__.py'
+UPDATE_ENV = 'NOVI_BROWSER_NO_UPDATE_CHECK'
+UPDATE_CHECK_HOURS = 24
+# Read beside this file: workers and agents run cli.py by path, where package imports fail.
+__version__ = (re.findall(r"__version__\s*=\s*['\"]([^'\"]+)", Path(__file__).with_name('__init__.py').read_text(encoding='utf-8')) or ['0'])[0]
+
+def version_tuple(text) -> tuple:
+    return tuple(int(part) for part in re.findall(r'\d+', str(text or ''))[:3])
+
+def latest_version(timeout: float=3.0) -> str:
+    with urllib.request.urlopen(VERSION_URL, timeout=timeout) as response:
+        found = re.search(r"__version__\s*=\s*['\"]([^'\"]+)", response.read(4096).decode('utf-8', 'replace'))
+    return found.group(1) if found else ''
+
+def update_notice(always: bool=False, now: float | None=None) -> str:
+    """One line when GitHub has a newer version; asks GitHub at most once a day."""
+    if os.environ.get(UPDATE_ENV):
+        return ''
+    now = time.time() if now is None else now
+    path = HOME / 'update-check.json'
+    seen = read_json(path, {}) or {}
+    checked = now - float(seen.get('at') or 0) >= UPDATE_CHECK_HOURS * 3600
+    if checked:
+        try:
+            seen = {'at': now, 'latest': latest_version()}
+        except (OSError, ValueError):
+            # Offline: wait a day instead of slowing every command.
+            seen = {'at': now, 'latest': seen.get('latest') or ''}
+        with contextlib.suppress(OSError):
+            write_json(path, seen)
+    latest = seen.get('latest') or ''
+    if (always or checked) and latest and version_tuple(latest) > version_tuple(__version__):
+        return f'novi-browser {latest} is available (installed {__version__}). Run `novi-browser update`; profiles, logins and notes are kept.'
+    return ''
+
+def installed_version() -> str:
+    # -I keeps a clone in the current folder from shadowing the installed package.
+    done = subprocess.run([sys.executable, '-I', '-c', 'import novi_browser; print(novi_browser.__version__)'], capture_output=True, text=True, timeout=60)
+    return done.stdout.strip() or '?'
+
+def self_update() -> int:
+    root = Path(__file__).resolve().parent.parent
+    if (root / '.git').exists():
+        command = ['git', '-C', str(root), 'pull', '--ff-only']
+    else:
+        command = [sys.executable, '-m', 'pip', 'install', '--upgrade', f'git+{REPO_URL}']
+    print('Running: ' + ' '.join(command), flush=True)
+    code = subprocess.call(command)
+    if code:
+        raise BrowserError(f'Update failed (exit {code}). Profiles, logins and notes were not touched.', EXIT_FAILED)
+    with contextlib.suppress(OSError):
+        (HOME / 'update-check.json').unlink()
+    print(f'novi-browser {__version__} -> {installed_version()}. Profiles, logins and notes are kept. Running browsers switch after they close (five idle minutes) or now with `novi-browser close --all`.')
+    return 0
+
 def main(argv=None) -> int:
     if (argv if argv is not None else sys.argv[1:])[:1] == ['_remote']:
         return serve_remote()
     parser = argparse.ArgumentParser(prog='novi-browser', description='No.VI agent browser: one persistent profile per identity')
     sub = parser.add_subparsers(dest='cmd', required=True)
     sub.add_parser('list')
+    sub.add_parser('update', help='Install the latest version from GitHub')
     add = sub.add_parser('add')
     add.add_argument('account', type=profile_name)
     add.add_argument('--site', required=True)
@@ -1698,6 +1755,10 @@ def main(argv=None) -> int:
     if hasattr(sys.stdout, 'reconfigure'):
         with contextlib.suppress(Exception):
             sys.stdout.reconfigure(encoding='utf-8')
+    if args.cmd not in ('_serve', 'update'):
+        notice = update_notice(always=args.cmd == 'list')
+        if notice:
+            print(notice, file=sys.stderr)
     try:
         return run(args)
     except BrowserError as exc:
@@ -1713,6 +1774,8 @@ def run(args) -> int:
         return 0
     if args.cmd == 'agent':
         return run_agent(args)
+    if args.cmd == 'update':
+        return self_update()
     if args.cmd == 'list':
         live = running()
         for account in accounts():

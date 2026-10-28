@@ -19,10 +19,10 @@ novi-browser list
 ### Update
 
 ```sh
-pip install --upgrade git+https://github.com/mkt-henry/novi-browser
+novi-browser update
 ```
 
-Profiles, logins and notes in `~/.novi-browser/` are kept. A clone installed with `pip install -e .` updates with `git pull`.
+Once a day the CLI asks GitHub for the latest version and prints one line when a newer one exists; `list` repeats it until you update. Profiles, logins and notes in `~/.novi-browser/` are kept. A clone installed with `pip install -e .` updates with `git pull`. Versions before 0.1.2 have no `update` command: run `pip install --upgrade git+https://github.com/mkt-henry/novi-browser` once. Set `NOVI_BROWSER_NO_UPDATE_CHECK=1` to turn the check off.
 
 For development, clone this repository and run `pip install -e .`. On Linux, `playwright install --with-deps chromium` can also install required system libraries (administrator privileges may be needed).
 
@@ -63,6 +63,7 @@ novi-browser exec No2 --site Work -c "snap(interactive=True)"
 | Command | Purpose |
 | --- | --- |
 | `list` | Profiles, identities, sites, last login checks, active sessions and available RAM |
+| `update` | Install the latest version from GitHub (`git pull` in a clone) |
 | `add No1 --site X --check URL --signed-out MARKER` | Add or update a site; `--signed-out` is repeatable |
 | `open No1 --site X [--headed] [--note TEXT]` | Start on demand and check login; optionally show a window |
 | `check No1 --site X` | Recheck login; may attempt a saved login once |
@@ -196,6 +197,7 @@ The local file is set to mode 600 where supported. On Windows, restrict access t
 | `NOVI_BROWSER_AGENT_MODEL` | Model for `agent`, default `sonnet` |
 | `NOVI_BROWSER_REMOTE` | Optional SSH target `user@host`; unset means run locally on every OS |
 | `NOVI_BROWSER_SHARE_CMD` | Optional executable and argument template for sharing a headed window |
+| `NOVI_BROWSER_NO_UPDATE_CHECK` | `1` stops the daily GitHub version check |
 
 Set a stable explicit session ID when a launcher creates a new parent process for each call. `--session ID` overrides it for open/exec/check/login/close/remember. `--card` remains a command-line compatibility alias.
 
@@ -241,6 +243,8 @@ On Windows, set `$env:PYTHONUTF8=1` in PowerShell first. GitHub Actions runs the
 ## 한국어 안내
 
 No.VI 브라우저는 로그인 계정마다 전용 프로필을 만들고, 필요할 때만 브라우저를 실행합니다. 기본은 헤드리스이며 유휴 시간이 지나면 쿠키를 저장하고 종료합니다. 여러 에이전트가 같은 프로필을 쓰더라도 세션마다 탭과 변수가 나뉩니다.
+
+새 판이 나오면 명령 실행 중 한 줄로 알려 줍니다. `novi-browser update` 한 번이면 로그인·프로필·요령을 그대로 둔 채 새 판으로 바뀝니다(0.1.1 이하는 처음 한 번만 `pip install --upgrade git+https://github.com/mkt-henry/novi-browser`).
 
 `novi-browser list`로 프로필을 확인하고, `add`로 사이트를 등록한 뒤 `exec` 또는 MCP로 사용하세요. `snap()`에서 읽은 참조 번호로 클릭하고, 게시·결제 등 되돌릴 수 없는 작업은 승인된 범위 안에서 `intent()`와 `done()`으로 기록하세요. 로그인이나 사람의 확인이 필요하면 `open --headed`로 창을 띄우세요. 로그인 데이터와 비밀값은 로컬 데이터 폴더에 보관되므로 접근 권한을 제한하고 공개 저장소에 올리지 마세요.
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "novi-browser"
-version = "0.1.1"
+version = "0.1.2"
 description = "No.VI agent browser: on-demand persistent browser profiles for any coding agent"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -5,6 +5,9 @@ import tempfile
 import uuid
 from pathlib import Path
 
+# Unit tests never ask GitHub for a newer version.
+os.environ.setdefault('NOVI_BROWSER_NO_UPDATE_CHECK', '1')
+
 
 class TemporaryDirectory:
     def __init__(self):
