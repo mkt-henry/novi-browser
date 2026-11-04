@@ -66,6 +66,7 @@ novi-browser exec No2 --site Work -c "snap(interactive=True)"
 | `update` | Install the latest version from GitHub now (`git pull` in a clone) |
 | `add No1 --site X --check URL --signed-out MARKER` | Add or update a site; `--signed-out` is repeatable |
 | `open No1 --site X [--headed] [--note TEXT]` | Start on demand and check login; optionally show a window |
+| `view URL [--account No1] [--site X]` | Show a link in a window of the profile signed in to its site (78 when none is), at the front; the No.VI app opens links this way. A window showing links stays up to two idle hours |
 | `check No1 --site X` | Recheck login; may attempt a saved login once |
 | `login No1 --site X` | Attempt the saved login method once |
 | `exec No1 --site X [-c CODE] [--timeout 120]` | Execute Playwright Python; omit `-c` to read stdin |
