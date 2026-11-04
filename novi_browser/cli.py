@@ -14,6 +14,7 @@ import threading
 import time
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 HOME = Path(os.environ.get('NOVI_BROWSER_HOME') or Path.home() / '.novi-browser').expanduser().resolve()
@@ -35,6 +36,8 @@ def session_id() -> str:
 ACCOUNT_ID = re.compile('^(?:No\\d{1,6}|(?!no\\d+$)[a-z0-9][a-z0-9-]{1,40})$')
 IDLE_SECONDS = 5 * 60
 HEADED_IDLE_SECONDS = 30 * 60
+# A window showing links opened from another app (`view`) stays while the person reads in it.
+VIEW_IDLE_SECONDS = 2 * 60 * 60
 SHARED_SECONDS = 60 * 60
 TAKEOVER_SECONDS = 2 * 60
 SAVE_SECONDS = 30
@@ -682,6 +685,8 @@ class Worker:
         self.busy_until = 0.0
         self.quick = False
         self.cut = 0.0
+        self.viewed: dict[int, list] = {}
+        self.viewing = False
 
     @contextlib.contextmanager
     def own_pace(self):
@@ -769,7 +774,7 @@ class Worker:
         page = space.get('page')
         if page is None or page.is_closed():
             held = {id(p) for other, pages in self.owned.items() if other != card for p in pages}
-            free = [p for p in self.ctx.pages if not p.is_closed() and id(p) not in held]
+            free = [p for p in self.ctx.pages if not p.is_closed() and id(p) not in held and (not self.from_view(p))]
             page = free[-1] if free else self.ctx.new_page()
             space['page'] = page
             if not any((page is p for p in self.owned.setdefault(card, []))):
@@ -990,6 +995,68 @@ class Worker:
         with contextlib.suppress(BrowserError, OSError, ValueError):
             self.config = load_account(self.account)
 
+    def view(self, url: str, reuse: bool=False) -> dict:
+        """A link opened from another app: in a tab of the person's own ('-', never an agent session's), at the front.
+        The tab the browser started with is used when this link started it (`reuse`); otherwise a new one."""
+        self.touch('-')
+        page = self.space('-').get('page') if reuse else None
+        if page is None or page.is_closed() or id(page) in self.viewed:
+            page = self.ctx.new_page()
+        self.adopt(page)
+        try:
+            page.goto(url, wait_until='commit', timeout=30000)
+        except Exception as exc:
+            if page.url in ('', 'about:blank'):
+                return {'ok': False, 'error': f'{type(exc).__name__}: {exc}'[:300]}
+        with contextlib.suppress(Exception):
+            page.bring_to_front()
+        self.viewed[id(page)][1] = page.url
+        return {'ok': True, 'url': page.url, 'hwnd': browser_window(self.account)}
+
+    def adopt(self, page) -> None:
+        """The page is the person's: no session takes it as a free tab, and its address changes keep the window up."""
+        self.space('-')['page'] = page
+        if not any((page is p for p in self.owned.setdefault('-', []))):
+            self.owned['-'].append(page)
+        self.viewed.setdefault(id(page), [page, page.url])
+
+    def from_view(self, page) -> bool:
+        """Whether the page was opened from a tab of viewed links (a link with target=_blank)."""
+        if not self.viewed:
+            return False
+        try:
+            opener = page.opener()
+        except Exception:
+            return False
+        return any((opener is entry[0] for entry in self.viewed.values()))
+
+    def watch_views(self) -> bool:
+        """Whether a tab of viewed links is still open. A new address in one counts as use (reading sends no
+        command), and a tab such a page opened is the person's too. When the last one closes, '-' leaves the browser's
+        sessions, so it closes with the last agent session."""
+        for key, (page, seen) in list(self.viewed.items()):
+            if page.is_closed():
+                self.viewed.pop(key, None)
+            elif page.url != seen:
+                self.viewed[key][1] = page.url
+                self.used = time.time()
+        if self.viewed:
+            held = {id(p) for owned in self.owned.values() for p in owned}
+            for page in self.ctx.pages:
+                if id(page) not in held and (not page.is_closed()) and self.from_view(page):
+                    self.adopt(page)
+                    self.used = time.time()
+        viewing = bool(self.viewed)
+        if viewing != self.viewing:
+            self.viewing = viewing
+            if not viewing and '-' in self.cards and (not [p for p in self.owned.get('-', []) if not p.is_closed()]):
+                for parts in (self.spaces, self.snaps, self.cards, self.owned):
+                    parts.pop('-', None)
+                if not self.cards:
+                    self.closing = 'links closed'
+            update_lock(self.account, viewing=viewing, cards=self.cards)
+        return viewing
+
     def release(self, card: str) -> None:
         card = card or '-'
         self.spaces.pop(card, None)
@@ -1039,7 +1106,11 @@ class Worker:
             self.errors += 1
         result['out'] = out.getvalue()[-20000:]
         mine = self.owned.setdefault(self.current, [])
-        mine.extend((p for p in self.ctx.pages if id(p) not in before and (not any((p is q for q in mine)))))
+        for page in [p for p in self.ctx.pages if id(p) not in before and (not any((p is q for q in mine)))]:
+            if self.from_view(page):
+                self.adopt(page)
+            else:
+                mine.append(page)
         with contextlib.suppress(Exception):
             result['url'] = self.page.url
             result['title'] = self.page.title()
@@ -1108,6 +1179,10 @@ class Worker:
                         elif self.path == '/close':
                             worker.closing = payload.get('reason') or 'closed'
                             answer = {'ok': True}
+                        elif self.path == '/view':
+                            answer = worker.view(payload.get('url') or '', bool(payload.get('reuse')))
+                            worker.viewing = bool(worker.viewed)
+                            update_lock(worker.account, used=worker.used, cards=worker.cards, viewing=worker.viewing)
                         elif self.path == '/release':
                             worker.release(card)
                             answer = {'ok': True, 'closing': bool(worker.closing), 'cards': sorted(worker.cards)}
@@ -1146,9 +1221,12 @@ class Worker:
             idle_limit = HEADED_IDLE_SECONDS if self.headed and (not needs_window(self.config, self.site)) else IDLE_SECONDS
             while not self.closing:
                 server.handle_request()
+                viewing = False
+                with contextlib.suppress(Exception):
+                    viewing = self.watch_views()
                 if not [p for p in self.ctx.pages if not p.is_closed()]:
                     self.closing = 'window closed'
-                elif time.time() - self.used > idle_limit and time.time() > shared_until(self.account):
+                elif time.time() - self.used > (VIEW_IDLE_SECONDS if viewing else idle_limit) and time.time() > shared_until(self.account):
                     self.closing = 'idle'
                 elif time.time() - self.saved > SAVE_SECONDS:
                     self.save_session()
@@ -1278,6 +1356,8 @@ def ensure(account: str, card: str, headed: bool=False, site: str='', _retry: bo
     if lock and lock.get('port'):
         if not headed or lock.get('headed'):
             return (lock, {})
+        if lock.get('viewing'):
+            raise BrowserError(f'{account} browser window is showing opened links; cannot reopen it headed. Use it as it is or retry later.', EXIT_LOCKED)
         others = others_using(lock, card)
         if others:
             raise BrowserError(f"Another session ({', '.join((o[:8] for o in others))}) is using {account} browser is in use; cannot reopen headed. Retry in {TAKEOVER_SECONDS // 60} minutes.", EXIT_LOCKED)
@@ -1364,6 +1444,73 @@ def memory_post(payload: dict, timeout: float=30) -> dict:
 def site_hosts(entry: dict) -> list[str]:
     login = entry.get('login') if isinstance(entry.get('login'), dict) else {}
     return list(dict.fromkeys((url for url in (entry.get('check_url'), entry.get('home'), login.get('url')) if url)))
+
+def site_domain(url: str) -> str:
+    """vercel.com for https://app.vercel.com/login; a two-letter country's co/or/go... keeps three (naver.co.kr)."""
+    host = urllib.parse.urlsplit(url if '//' in (url or '') else '//' + (url or '')).hostname or ''
+    parts = host.split('.')
+    keep = 3 if len(parts) > 2 and len(parts[-1]) == 2 and (parts[-2] in {'co', 'or', 'go', 'ne', 'ac', 're', 'pe', 'com', 'net', 'org'}) else 2
+    return '.'.join(parts[-keep:])
+
+def profile_for(url: str) -> tuple[str, str]:
+    """The profile and site to show a link in: the one whose site has the link's own host (then the longest shared
+    path), else the same domain; among those a site whose login check passed, then the one checked last. ('', '')
+    when no profile signs in to that site."""
+    parts = urllib.parse.urlsplit(url)
+    host, domain = ((parts.hostname or '').lower(), site_domain(url))
+    path = [part for part in parts.path.split('/') if part]
+    if not host:
+        return ('', '')
+    best, chosen = (None, ('', ''))
+    for account in accounts():
+        try:
+            config = load_account(account)
+        except (BrowserError, OSError, ValueError):
+            continue
+        state = auth_state(account)
+        for site, entry in (config.get('sites') or {}).items():
+            for known in site_hosts(entry):
+                there = urllib.parse.urlsplit(known if '//' in known else '//' + known)
+                place = [part for part in there.path.split('/') if part]
+                shared = len(os.path.commonprefix([path, place]))
+                # The site's own page or under it, or a page beside it (a form's view page for its edit page); another
+                # place on the same host (someone else's document on docs.google.com) counts only as the same domain.
+                if (there.hostname or '').lower() == host and (shared == len(place) or shared >= 2):
+                    level = 2
+                elif site_domain(known) == domain:
+                    level, shared = (1, 0)
+                else:
+                    continue
+                seen = state.get(site) or {}
+                rank = (level, shared, seen.get('auth') == 'READY', str(seen.get('checked_at') or ''))
+                if best is None or rank > best:
+                    best, chosen = (rank, (account, site))
+    return chosen
+
+def view(url: str, account: str='', site: str='') -> int:
+    """`view`: the link in a window of the profile signed in to its site. 78 when no profile knows the site, so the
+    calling app (the No.VI app) opens it in the everyday browser instead."""
+    if not re.match('^https?://', url or '', re.I):
+        raise BrowserError('view <http(s) URL>', EXIT_USAGE)
+    if not account:
+        account, site = profile_for(url)
+        if not account:
+            print(f'No profile is signed in to {site_domain(url)}.')
+            return EXIT_NO_ACCOUNT
+    config = load_account(account)
+    site = site_config(config, site or None)[0]
+    lock, started = ensure(account, '-', headed=True, site=site)
+    lock = wait_turn(account, '-', limit=30) or lock
+    try:
+        answer = call_fresh(account, '-', lock, '/view', {'card': '-', 'url': url, 'reuse': bool(started)}, timeout=60, headed=True, site=site)
+    except (OSError, ValueError) as exc:
+        raise BrowserError(f'Browser did not respond ({exc})')
+    if not answer.get('ok'):
+        raise BrowserError(answer.get('error') or 'Could not open it', int(answer.get('code') or EXIT_FAILED))
+    print(f"{account} · {site}: {answer.get('url') or url}")
+    if answer.get('hwnd'):
+        print(f"HWND={answer['hwnd']}")
+    return 0
 
 def format_notes(notes: list[dict], limit: int) -> str:
     shown, rest, used = ([], [], 0)
@@ -1817,6 +1964,10 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog='novi-browser', description='No.VI agent browser: one persistent profile per identity')
     sub = parser.add_subparsers(dest='cmd', required=True)
     sub.add_parser('list')
+    vw = sub.add_parser('view', help='Open a link in a window of the profile signed in to its site (78: none is)')
+    vw.add_argument('url')
+    vw.add_argument('--account', type=profile_name, default='')
+    vw.add_argument('--site', default='')
     sub.add_parser('update', help='Install the latest version from GitHub now')
     sp = sub.add_parser('setup', help='Install the agent guides and Chromium')
     sp.add_argument('--no-browser', action='store_true', help='Skip the Chromium download')
@@ -1922,6 +2073,8 @@ def run(args) -> int:
         return 0
     if args.cmd == 'agent':
         return run_agent(args)
+    if args.cmd == 'view':
+        return view(args.url, args.account, args.site)
     if args.cmd == 'update':
         return self_update()
     if args.cmd == 'setup':
@@ -2065,7 +2218,7 @@ def run(args) -> int:
     return 0
 def entrypoint() -> int:
     argv = sys.argv[1:]
-    if REMOTE_HOST and argv[:1] not in (['_remote'], ['_serve']):
+    if REMOTE_HOST and argv[:1] not in (['_remote'], ['_serve'], ['view']):
         return forward(argv)
     return main(argv)
 
